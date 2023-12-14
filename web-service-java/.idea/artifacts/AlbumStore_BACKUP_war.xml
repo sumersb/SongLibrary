@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="war" name="AlbumStore_BACKUP:war">
+    <output-path>$PROJECT_DIR$/out/artifacts/AlbumStore_BACKUP_war</output-path>
+    <root id="archive" name="AlbumStore-1.0-SNAPSHOT.war">
+      <element id="artifact" artifact-name="AlbumStore:war exploded" />
+    </root>
+  </artifact>
+</component>
