@@ -15,6 +15,8 @@ public class ClientThreadManager {
 
     private static final int ITERATIONS_PER_THREAD = 100;
 
+    private static final int GET_REVIEW_THREAD = 3;
+
     private int threadGroupSize;
 
     private int numThreadGroups;
@@ -38,7 +40,8 @@ public class ClientThreadManager {
     }
 
     public void callThreads() throws InterruptedException, FileNotFoundException {
-
+        ThreadSafeLargestNumber largestNumber = new ThreadSafeLargestNumber(-1);
+        largestNumber.update(Integer.parseInt("32"));
         //Create threadsafe queue to store latency information
         LinkedBlockingQueue<CallInfo> callInfoQueue= new LinkedBlockingQueue<>();
         //Creates writer instance to process callInfo information of all threads
@@ -47,71 +50,54 @@ public class ClientThreadManager {
 
 
         // Initialize jagged threadArray with 10 Threads in First Index and threadGroupSize threads in rest of indexes
-        Thread[][] threadArray = new Thread[numThreadGroups + 1][];
-        threadArray[0] = new Thread[STARTUP_THREAD_COUNT];
-        for (int i = 1; i <= numThreadGroups;i++) {
-            threadArray[i] = new Thread[threadGroupSize];
-        }
-        // Startup threads initiated
-        for (int i = 0; i < threadArray[0].length ; i++) {
-            threadArray[0][i] = new Client(IPAddr, path,ITERATIONS_PER_STARTUP_THREAD, callInfoQueue, false);
-            threadArray[0][i].start();
-        }
-        //Wait for completion of startup threads
-        for (int i = 0; i < threadArray[0].length ; i++) {
-            threadArray[0][i].join();
-        }
-        //Take startTime before test threads are run
+        Thread[][] threadArray = createThreadArray(callInfoQueue, largestNumber);
+        Thread[] sentimentThreads = createSentimentClientArray(callInfoQueue, largestNumber);
+
+        initThreadArray((threadArray[0]));
+        finishThreadArray((threadArray[0]));
+
         long startTime = System.currentTimeMillis();
 
-        //Iterate through threadGroups and start threads with delay in between
-        for (int i = 1; i < threadArray.length ; i++) {
-            for (int j = 0; j < threadArray[i].length; j++) {
-                threadArray[i][j] = new Client(IPAddr, path, ITERATIONS_PER_THREAD,callInfoQueue, true);
-                threadArray[i][j].start();
-            }
-            //Delay between next thread group iteration
-            Thread.sleep( delay * SECOND_TO_MILLISECOND);
-        }
+        initAllClientThreads(threadArray);
+        long getReviewWallTime = initSentimentandCompleteAll(threadArray,sentimentThreads);
 
-        //Wait for completion of all threads
-        for (int i = 1; i < threadArray.length ; i++) {
-            for (int j = 0; j < threadArray[i].length; j++) {
-                threadArray[i][j].join();
-            }
-        }
-        //Take endTime time now threads have finished
-        long endTime = System.currentTimeMillis();
+        long overallWallTime = System.currentTimeMillis() - startTime;
 
         //Add marker to callInfoQueue to tell writer to stop
         callInfoQueue.add(new CallInfo(-1,null,-1,-1));
 
+        writer.join();
+
         //Pass information stores to printStats
-        printStats(startTime, endTime, writer);
+        printStats(overallWallTime, getReviewWallTime, writer);
     }
 
-
-    private void printStats(long startTime, long endTime, Writer writer) {
+    private void printStats(long overallWallTime, long getReviewWallTime, Writer writer) {
 
         //ITERATIONS_PER_THREAD multiplied BY 2 to account for get and post request
-        int callSize = numThreadGroups * threadGroupSize * ITERATIONS_PER_THREAD * REQUESTS_PER_ITERATION;
+        int callSize = numThreadGroups * threadGroupSize * ITERATIONS_PER_THREAD * REQUESTS_PER_ITERATION ;
 
         //Self-explanatory
-        float wallTime = (endTime - startTime) * MILLISECOND_TO_SECOND;
+        float wallTime =  overallWallTime * MILLISECOND_TO_SECOND;
+
+        float getWallTime = getReviewWallTime * MILLISECOND_TO_SECOND;
 
         float throughput = (float) (writer.getPostSentimentSuccess()+writer.getPostSuccess()) / wallTime;
 
-        float postSentimentMean = (float) writer.getPostSentimentSum() / writer.getPostSentimentSuccess();
+        float getReviewThroughput = (float) (writer.getGetReviewSuccess() / getWallTime);
+        float getReviewMean = (float) writer.getGetReviewSum() / writer.getGetReviewSuccess();
+        double getReviewMedian = writer.getGetReviewDigest().quantile(0.5);
+        double getReviewPercentile99 = writer.getGetReviewDigest().quantile(0.99);
 
         float postMean = (float) writer.getPostLatencySum() / writer.getPostSuccess();
+        double postMedian = writer.getPostDigest().quantile(0.5);
+        double postPercentile99 = writer.getPostDigest().quantile(0.99);
 
+        float postSentimentMean = (float) writer.getPostSentimentSum() / writer.getPostSentimentSuccess();
         double postSentimentMedian = writer.getPostSentimentDigest().quantile(0.5);
-
         double postSentimentPercentile99 = writer.getPostSentimentDigest().quantile(0.99);
 
-        double postMedian = writer.getPostDigest().quantile(0.5);
 
-        double postPercentile99 = writer.getPostDigest().quantile(0.99);
 
         //Print out all information to terminal
         System.out.println();
@@ -141,8 +127,91 @@ public class ClientThreadManager {
         System.out.println("Post Album 99 Percentile: " + postPercentile99);
         System.out.println("Post Album Max Latency: " + writer.getMaxPostLatency());
 
+        System.out.println();
+        System.out.println("Get Review Success: " + writer.getGetReviewSuccess());
+        System.out.println("Get Review Wall Time: " + getWallTime);
+        System.out.println("Get Review Throughput: " + getReviewThroughput);
+        System.out.println("Min Get Review Latency: " + writer.getMinGetReviewLatency());
+        System.out.println("Get Review Mean: " + getReviewMean);
+        System.out.println("Get Review Median: " + getReviewMedian);
+        System.out.println("Get Review 99 Percentile: " + getReviewPercentile99);
+        System.out.println("Get Review Max Latency: " + writer.getMaxGetReviewLatency());
+
 
     }
+
+
+    private Thread[][] createThreadArray(LinkedBlockingQueue<CallInfo> latencyQueue, ThreadSafeLargestNumber largestNumber) throws FileNotFoundException {
+        Thread[][] clientArray = new Thread[numThreadGroups+1][];
+
+        clientArray[0] = new Thread[STARTUP_THREAD_COUNT];
+
+        for (int i = 1; i < numThreadGroups+1; i++) {
+            clientArray[i] = new Thread[threadGroupSize];
+        }
+
+        for (int i = 0; i < clientArray.length; i++) {
+            for (int j = 0; j < clientArray[0].length; j++) {
+                if (i == 0) {
+                    clientArray[i][j] = new Client(IPAddr, path,ITERATIONS_PER_STARTUP_THREAD, null,largestNumber);
+                } else {
+                    clientArray[i][j] = new Client(IPAddr, path, ITERATIONS_PER_THREAD,latencyQueue, largestNumber);
+                }
+            }
+        }
+        return clientArray;
+    }
+
+    private Thread[] createSentimentClientArray(LinkedBlockingQueue<CallInfo> latencyQueue, ThreadSafeLargestNumber largestNumber) {
+        Thread[] semtimentClientArray = new Thread[GET_REVIEW_THREAD];
+        for (int i = 0; i < GET_REVIEW_THREAD; i++) {
+            semtimentClientArray[i] = new QuerySentimentThread(IPAddr,path,latencyQueue,largestNumber);
+        }
+        return semtimentClientArray;
+    }
+
+    private void initAllClientThreads(Thread[][] clientArray) throws InterruptedException {
+        for (int i = 1; i < clientArray.length; i++) {
+            initThreadArray(clientArray[i]);
+            //Delay between next thread group iteration
+            Thread.sleep( delay * SECOND_TO_MILLISECOND);
+        }
+    }
+
+    private long initSentimentandCompleteAll(Thread[][] clientArray, Thread[] getReviewArray) throws InterruptedException {
+        Long startTime = null;
+        Long endTime = null;
+        for (int i = 1; i < clientArray.length ; i++) {
+            finishThreadArray(clientArray[i]);
+            if (i == 1) {
+                System.out.println("Review Threads started");
+                startTime = System.currentTimeMillis();
+                initThreadArray(getReviewArray);
+            }
+        }
+        forceEndArray(getReviewArray);
+        endTime = System.currentTimeMillis();
+        return endTime - startTime;
+    }
+
+    private void initThreadArray(Thread[] array) {
+        for (int i = 0; i < array.length; i++) {
+            array[i].start();
+        }
+    }
+
+    private void finishThreadArray(Thread[] array) throws InterruptedException {
+        for (int i = 0; i < array.length; i++) {
+            array[i].join();
+        }
+    }
+
+    private void forceEndArray(Thread[] array) {
+        for (Thread thread: array) {
+            thread.interrupt();
+        }
+    }
+
 
     private void parseURL(String URL) {
         try {

@@ -15,27 +15,26 @@ public class Writer extends Thread {
 
     private LinkedBlockingQueue<CallInfo> callInfoQueue;
 
-    private int postSentimentSuccess = 0;
-
     private int postSuccess = 0;
-
-    private long postSentimentSum = 0;
-
     private long postLatencySum = 0;
-
-    private long maxPostLatency = 0;
-
+    private long maxPostLatency = Long.MIN_VALUE;
     private long minPostLatency = Long.MAX_VALUE;
-
-    private long maxPostSentimentLatency = 0;
-
-    private long minPostSentimentLatency = Long.MAX_VALUE;
-
-    private final int MILLISECONDS_PER_SECOND = 1000;
-
-    private MergingDigest postSentimentDigest = new MergingDigest(50,1000,100);
     private MergingDigest postDigest = new MergingDigest(50,1000,100);
 
+    private int postSentimentSuccess = 0;
+    private long postSentimentSum = 0;
+    private long maxPostSentimentLatency = Long.MIN_VALUE;
+    private long minPostSentimentLatency = Long.MAX_VALUE;
+    private MergingDigest postSentimentDigest = new MergingDigest(50,1000,100);
+
+
+    private int getReviewSuccess = 0;
+    private long getReviewSum = 0;
+    private long maxGetReviewLatency = Long.MIN_VALUE;
+    private long minGetReviewLatency = Long.MAX_VALUE;
+    private MergingDigest getReviewDigest = new MergingDigest(50,1000,100);
+
+    private final int MILLISECONDS_PER_SECOND = 1000;
 
 
     public Writer(LinkedBlockingQueue<CallInfo> callInfoQueue) {
@@ -79,6 +78,12 @@ public class Writer extends Thread {
                         minPostLatency = Math.min(minPostLatency,latency);
                         postSuccess += 1;
                         postLatencySum += latency;
+                    } else if (callInfo.getRequestType().equals("getReview")) {
+                        getReviewDigest.add(latency);
+                        maxGetReviewLatency = Math.max(maxGetReviewLatency,latency);
+                        minGetReviewLatency = Math.min(minGetReviewLatency,latency);
+                        getReviewSuccess += 1;
+                        getReviewSum += latency;
                     }
                     callEndTime = callInfo.getStartTime() + latency;
 
@@ -105,6 +110,7 @@ public class Writer extends Thread {
         return callInfoQueue;
     }
 
+
     public MergingDigest getPostDigest() {
         return postDigest;
     }
@@ -125,6 +131,7 @@ public class Writer extends Thread {
         return postLatencySum;
     }
 
+
     public MergingDigest getPostSentimentDigest() {return postSentimentDigest;}
 
     public int getPostSentimentSuccess() {return postSentimentSuccess;}
@@ -134,4 +141,24 @@ public class Writer extends Thread {
     public long getMaxPostSentimentLatency() {return maxPostSentimentLatency;}
 
     public long getMinPostSentimentLatency() {return minPostSentimentLatency;}
+
+    public int getGetReviewSuccess() {
+        return getReviewSuccess;
+    }
+
+    public long getGetReviewSum() {
+        return getReviewSum;
+    }
+
+    public long getMaxGetReviewLatency() {
+        return maxGetReviewLatency;
+    }
+
+    public long getMinGetReviewLatency() {
+        return minGetReviewLatency;
+    }
+
+    public MergingDigest getGetReviewDigest() {
+        return getReviewDigest;
+    }
 }

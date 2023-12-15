@@ -3,7 +3,7 @@ import java.io.FileNotFoundException;
 public class Main {
     private static final String GO_IP_ADDR = "http://34.208.201.244:8080/albums";
 
-    private static final String JAVA_IP_ADDR = "http://52.42.125.208:8080/AlbumStore_war";
+    private static final String JAVA_IP_ADDR = "http://routeLB-123924762.us-west-2.elb.amazonaws.com/AlbumStore_war";
 
     private static final String LOCAL_GO_IP_ADDR = "http://localhost:8080/albums";
 

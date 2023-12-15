@@ -1,6 +1,7 @@
 public class Sentiment {
-    int likes;
-    int dislikes;
+    private int likes;
+
+    private int dislikes;
 
     public Sentiment() {
     }
